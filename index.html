@@ -37,7 +37,10 @@ onAuthStateChanged(auth,async user=>{allowed=false;if(unsubscribe){unsubscribe()
   handle.className='move-handle';
   handle.textContent='↕ Drag';
   button.append(handle);
-  let start=null, dragging=false, target=null;
+  let start=null, dragging=false, target=null, lastPoint=null, scrollFrame=0;
+function stopScroll(){if(scrollFrame)cancelAnimationFrame(scrollFrame);scrollFrame=0;lastPoint=null}
+function autoScroll(){scrollFrame=0;if(!dragging||!start||!lastPoint)return;const edge=95,h=window.innerHeight,y=lastPoint.y;let velocity=0;if(y<edge)velocity=-Math.min(18,(edge-y)/edge*18);else if(y>h-edge)velocity=Math.min(18,(y-(h-edge))/edge*18);if(velocity){const before=window.scrollY;window.scrollBy(0,velocity);if(window.scrollY!==before)highlight(hit(lastPoint))}scrollFrame=requestAnimationFrame(autoScroll)}
+
   function highlight(next){
     target?.classList.remove('drop-target');
     target=next;
@@ -53,8 +56,7 @@ onAuthStateChanged(auth,async user=>{allowed=false;if(unsubscribe){unsubscribe()
     if(!start || start.pointer!==e.pointerId)return;
     const next=dragging && e.type==='pointerup' && hit(e);
     const to=next?.dataset?.seat;
-    start=null;
-    dragging=false;
+    stopScroll();start=null;dragging=false;
     target?.classList.remove('drop-target');
     target=null;
     button.classList.remove('drag-source');
@@ -73,18 +75,15 @@ onAuthStateChanged(auth,async user=>{allowed=false;if(unsubscribe){unsubscribe()
   }
   handle.onpointerdown=e=>{
     if(!e.isPrimary || e.button!==0)return;
-    start={x:e.clientX,y:e.clientY,pointer:e.pointerId};
+    start={x:e.clientX,y:e.clientY,pointer:e.pointerId};lastPoint={clientX:e.clientX,clientY:e.clientY,y:e.clientY};
     handle.setPointerCapture(e.pointerId);
   };
   handle.onpointermove=e=>{
     if(!start || e.pointerId!==start.pointer)return;
     if(!dragging && Math.hypot(e.clientX-start.x,e.clientY-start.y)<8)return;
-    dragging=true;
-    button.classList.add('drag-source');
+    dragging=true;if(!scrollFrame)scrollFrame=requestAnimationFrame(autoScroll);button.classList.add('drag-source');
     $('dragHint').hidden=false;
-    highlight(hit(e));
-  };
-  handle.onpointerup=handle.onpointercancel=handle.onlostpointercapture=finish;
+    lastPoint={clientX:e.clientX,clientY:e.clientY,y:e.clientY};highlight(hit(e));};handle.onpointerup=handle.onpointercancel=handle.onlostpointercapture=finish;
   handle.onclick=e=>e.stopPropagation();
 }
 function seatEl(id){const p=s.seats[id],b=document.createElement('button');const finished=p?.paid&&p.remaining===0;const progress=!p?'empty':finished?'empty':p.progress||(p.paid?'paid':'payment');const icons={empty:'◯',waiver:'📋',payment:'💳',paid:'✓',tickets:'🎟️',drink:'🥤'};const labels={empty:'Empty',waiver:'Waiver needed',payment:'Payment due',paid:'Paid · tickets pending',tickets:'2 tickets',drink:'Drink + ticket'};b.className='seat '+progress+(multi.has(id)?' selected':'');b.type='button';const ic=document.createElement('span');ic.className='seat-icon';ic.textContent=finished?'✓':icons[progress];const name=document.createElement('span');name.textContent=id;const sub=document.createElement('span');sub.className='sub';sub.textContent=finished?'✓ Finished':labels[progress];b.append(ic,name,sub);if(p&&!finished&&p.paid){const loops=document.createElement('span');loops.className='loop-badge';loops.textContent='↻ '+p.remaining+' / '+(p.duration/15)+' loops';b.append(loops)}b.onclick=()=>{if(multi.has(id))multi.delete(id);else multi.add(id);render()};b.dataset.seat=id;if(p)attachHandle(b,id);return b}function render(persist=false){$('dragHint').hidden=true;const bike=$('bike');bike.replaceChildren();for(let i=1;i<=6;i++){const left=seatEl('L'+i);left.style.gridColumn='1';left.style.gridRow=String(i);bike.append(left);if(i===1){const rail=document.createElement('div');rail.className='rail';rail.innerHTML='<div class="driver">◉<br>DRIVER</div>';bike.append(rail)}const right=seatEl('R'+i);right.style.gridColumn='3';right.style.gridRow=String(i);bike.append(right)}const rear=$('rear');rear.className='rear four';rear.replaceChildren(...['B1','B2','B3','B4'].map(seatEl));$('groupBtn').disabled=multi.size===0;$('groupBtn').textContent='Set Ride · '+multi.size+' selected';const passengers=Object.values(s.seats);$('occupied').textContent=passengers.length;$('paid').textContent=passengers.filter(p=>p.paid).length;$('unpaid').textContent=passengers.filter(p=>!p.paid).length;$('revenue').textContent=currency(total(s.sales));$('loops').textContent=s.loops;$('passengers').textContent=s.sales.length;$('payments').textContent=s.sales.length;$('breakdown').textContent=[15,30,60].map(d=>d+' min: '+s.sales.filter(r=>r.duration===d).length).join('   •   ');const h=$('history');h.replaceChildren();if(!s.history.length)h.textContent='No archived nights yet.';else{const t=document.createElement('table');t.innerHTML='<thead><tr><th>Date</th><th>Riders</th><th>Loops</th><th>Sales</th></tr></thead>';const tb=document.createElement('tbody');for(const x of [...s.history].reverse()){const tr=document.createElement('tr');for(const v of [x.night,x.sales.length,x.loops,currency(total(x.sales))]){const td=document.createElement('td');td.textContent=v;tr.append(td)}tb.append(tr)}t.append(tb);h.append(t)}if(persist)save()}
